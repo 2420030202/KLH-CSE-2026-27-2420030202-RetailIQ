@@ -1,4 +1,4 @@
-﻿# Data-Driven Customer Behaviour Analytics System
+﻿# Intelligent Retail Customer Analytics
 
 ## Team Members
 
