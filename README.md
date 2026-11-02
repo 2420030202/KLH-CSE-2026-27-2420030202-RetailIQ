@@ -311,7 +311,7 @@ Use `.gitignore` to exclude virtual environments, local configuration, secrets, 
 **Repository URL recorded in the project README:**
 
 ```text
-[https://github.com/maneeshreddy79/KLH-CSE-2026-27-2420030246-RetailIQ.git](https://github.com/2420030202/KLH-CSE-2026-27-2420030202-RetailIQ)
+https://github.com/2420030202/KLH-CSE-2026-27-2420030202-RetailIQ
 ```
 
 Confirm the canonical repository URL in GitHub before sharing or changing repository details. The earlier README contained two different clone/repository URLs.
