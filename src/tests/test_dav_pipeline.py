@@ -1,3 +1,4 @@
+import pytest
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
@@ -20,7 +21,7 @@ from src.dav_support import (
     generate_shap_explanation,
     positive_risk_class_index,
 )
-from src.advanced_ml import run_advanced_predictive
+from src.advanced_ml import run_advanced_predictive, run_forecast
 from src.ml_analyzer import _safe_split, infer_task, run_anomaly_detection, run_clustering, run_supervised
 from src.cleaner import build_cleaning_plan, clean_dataset
 
@@ -108,6 +109,8 @@ def test_model_preparation_normalizes_pandas_nullable_values():
 
 
 def test_pipeline_explanations_support_encoded_categorical_features():
+    pytest.importorskip("shap", reason="Optional dependency shap not installed")
+    pytest.importorskip("lime", reason="Optional dependency lime not installed")
     df = _synthetic_churn_data().head(80)
     X, y, info = _prepare_model_data(df, target_column="churn")
     X_train, X_test, y_train, _ = train_test_split(
@@ -255,6 +258,8 @@ def test_rare_class_split_falls_back_to_unstratified_holdout():
 
 
 def test_explainability_supports_regression_models():
+    pytest.importorskip("shap", reason="Optional dependency shap not installed")
+    pytest.importorskip("lime", reason="Optional dependency lime not installed")
     df = _sales_regression_data(80).drop(columns=["cost", "profit", "profit_margin"])
     fitted = fit_explanation_model(df, "sales")
 
@@ -318,3 +323,18 @@ def test_risk_positive_class_is_not_guessed_from_unknown_labels():
     assert positive_risk_class_index(["No", "Yes"]) == 1
     assert positive_risk_class_index(["No Churn", "Churn"]) == 1
     assert positive_risk_class_index(["Class A", "Class B"]) is None
+
+def test_forecasting_pipeline_generates_forecast_without_shape_mismatch():
+    dates = pd.date_range("2026-01-01", periods=25, freq="D")
+    df = pd.DataFrame({
+        "order_date": dates,
+        "daily_sales": [100.0 + i * 5.0 + (i % 3) * 2.5 for i in range(25)],
+    })
+    result = run_forecast(df, date_col="order_date", target="daily_sales", horizon=7)
+
+    assert result["ok"] is True
+    assert result["target"] == "daily_sales"
+    assert result["date_column"] == "order_date"
+    assert len(result["forecast"]) == 7
+    assert list(result["forecast"].columns) == ["date", "forecast"]
+    assert not result["forecast"]["forecast"].isna().any()
