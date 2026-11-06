@@ -102,7 +102,7 @@ def _is_date_like(series: pd.Series) -> bool:
         sample = series.dropna().astype(str).head(200)
         if len(sample) < 5:
             return False
-        parsed = pd.to_datetime(sample, errors="coerce")
+        parsed = pd.to_datetime(sample, format="mixed", errors="coerce")
         return float(parsed.notna().mean()) >= 0.80
     return False
 
@@ -148,6 +148,28 @@ def summarize_dataset(df: pd.DataFrame, target_column: str | None = None) -> dic
         "descriptive_statistics": df.describe(include="all").T.to_dict(),
     }
     return summary
+
+
+def build_dataset_understanding_metrics(
+    raw_duplicates: int,
+    cleaned_duplicates: int,
+    target_column: str | None,
+    class_imbalance: float | None,
+) -> pd.DataFrame:
+    labels = [
+        "Duplicate rows detected before cleaning",
+        "Duplicate rows remaining after cleaning",
+        "Target column",
+        "Task-relevant target balance",
+    ]
+    values = [raw_duplicates, cleaned_duplicates, target_column, class_imbalance]
+    return pd.DataFrame({
+        "Metric": labels,
+        "Value": pd.array(
+            [None if value is None else str(value) for value in values],
+            dtype="string",
+        ),
+    })
 
 
 def build_target_distribution_data(target: pd.Series) -> tuple[str, pd.DataFrame]:

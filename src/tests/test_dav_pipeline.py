@@ -1,10 +1,13 @@
-import pytest
+import warnings
+
 import pandas as pd
+import pytest
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 
+from src.analyzer import _date_like_columns, analyze_dataset
 from src.dav_support import (
     build_project_definition,
     summarize_dataset,
@@ -12,8 +15,10 @@ from src.dav_support import (
     _prepare_model_data,
     build_hybrid_model,
     build_preprocessing_decisions,
+    build_dataset_understanding_metrics,
     compare_models,
     build_target_distribution_data,
+    _is_date_like,
     fit_explanation_model,
     _safe_pr_auc,
     _safe_roc_auc,
@@ -89,6 +94,68 @@ def test_hybrid_model_build_and_comparison_are_valid():
     for metric in ("Accuracy", "Precision", "Recall", "F1", "ROC-AUC", "PR-AUC"):
         assert comparison_hybrid["metrics"][metric] == result["metrics"][metric]
         assert hybrid_row[metric] == result["metrics"][metric]
+
+
+def test_retrain_hybrid_button_forces_fresh_training(monkeypatch):
+    import src.dav_support as dav_support
+    from streamlit.testing.v1 import AppTest
+
+    df = _synthetic_churn_data().head(80)
+    profile = analyze_dataset(df)
+    fingerprint = "active-dataset-fingerprint"
+    cached_hybrid = {
+        "ok": True,
+        "target": "churn",
+        "dataset_fingerprint": fingerprint,
+        "model_name": "Cached Hybrid",
+        "task": "classification",
+        "metrics": {"Accuracy": 0.5},
+        "confusion_matrix": [[10, 0], [0, 10]],
+    }
+    fresh_hybrid = {
+        **cached_hybrid,
+        "model_name": "Fresh Hybrid",
+        "metrics": {"Accuracy": 0.75},
+    }
+    training_calls = []
+
+    def fake_build_hybrid_model(data, target):
+        training_calls.append((data, target))
+        return fresh_hybrid.copy()
+
+    monkeypatch.setattr(dav_support, "build_hybrid_model", fake_build_hybrid_model)
+
+    app = AppTest.from_file("app.py")
+    app.session_state["raw_df"] = df
+    app.session_state["cleaned_df"] = df
+    app.session_state["profile"] = profile
+    app.session_state["clean_profile"] = profile
+    app.session_state["dataset_summary"] = summarize_dataset(df)
+    app.session_state["uploaded_fingerprint"] = fingerprint
+    app.session_state["comparison_result"] = {
+        "ok": True,
+        "target": "churn",
+        "dataset_fingerprint": fingerprint,
+        "hybrid": cached_hybrid,
+    }
+    app.session_state["hybrid_model"] = cached_hybrid
+
+    app.run()
+    assert not app.exception
+    app.button(key="nav_Hybrid Model").click().run()
+    assert not app.exception
+    assert app.button(key="retrain_hybrid_btn").label.endswith("Retrain Hybrid")
+
+    app.button(key="retrain_hybrid_btn").click().run()
+
+    assert not app.exception
+    assert len(training_calls) == 1
+    pd.testing.assert_frame_equal(training_calls[0][0], df)
+    assert training_calls[0][1] == "churn"
+    assert app.session_state["hybrid_model"]["model_name"] == "Fresh Hybrid"
+    assert app.session_state["hybrid_model"]["dataset_fingerprint"] == fingerprint
+    assert app.session_state["comparison_result"]["hybrid"]["model_name"] == "Fresh Hybrid"
+    assert app.session_state["comparison_result"]["hybrid"]["dataset_fingerprint"] == fingerprint
 
 
 def test_model_preparation_normalizes_pandas_nullable_values():
@@ -292,6 +359,46 @@ def test_raw_and_cleaned_duplicate_counts_are_calculated_from_each_frame():
     assert int(raw.duplicated().sum()) == 2
     assert len(cleaned) == 2
     assert int(cleaned.duplicated().sum()) == 0
+
+
+def test_dataset_understanding_metrics_are_arrow_serializable():
+    pa = pytest.importorskip("pyarrow")
+
+    metrics = build_dataset_understanding_metrics(2, 0, "churn", 0.75)
+    arrow_table = pa.Table.from_pandas(metrics)
+
+    assert str(metrics["Value"].dtype) == "string"
+    assert metrics["Value"].tolist() == ["2", "0", "churn", "0.75"]
+    assert arrow_table.column("Value").to_pylist() == ["2", "0", "churn", "0.75"]
+
+
+def test_date_detection_handles_mixed_formats_without_parser_warnings():
+    df = pd.DataFrame({
+        "order_date": [
+            "2026-01-02",
+            "01/03/2026",
+            "March 4, 2026",
+            "2026/04/05",
+            "05-06-2026",
+        ],
+        "customer_id": [f"CUST_{index:04}" for index in range(5)],
+    })
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        date_columns = _date_like_columns(df)
+        summary = summarize_dataset(df)
+        cleaned, _ = clean_dataset(df, build_cleaning_plan(df))
+        date_like = _is_date_like(df["order_date"])
+        identifier_like = _is_date_like(df["customer_id"])
+
+    assert not caught
+    assert date_columns == ["order_date"]
+    assert summary["date_columns"] == ["order_date"]
+    assert date_like is True
+    assert identifier_like is False
+    assert pd.api.types.is_datetime64_any_dtype(cleaned["order_date"])
+    assert cleaned["order_date"].notna().all()
 
 
 def test_target_distribution_data_keeps_continuous_values_for_histograms():

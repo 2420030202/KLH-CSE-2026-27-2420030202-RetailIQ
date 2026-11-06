@@ -14,6 +14,7 @@ from src.cleaner import build_cleaning_plan, clean_dataset
 from src.dav_support import (
     build_customer_recommendation,
     build_data_story,
+    build_dataset_understanding_metrics,
     build_hybrid_model,
     build_target_distribution_data,
     build_preprocessing_decisions,
@@ -681,29 +682,30 @@ def get_or_compute_comparison(df, target=None):
             st.session_state.comparison_result = err
             return err
 
-def get_or_compute_hybrid(df, target=None):
+def get_or_compute_hybrid(df, target=None, force_retrain=False):
     target = target or st.session_state.dataset_summary.get("target_column") or detect_target(df)
     if not target:
         return {"ok": False, "error": "The hybrid model requires a target column."}
     curr = st.session_state.get("hybrid_model")
-    if curr and curr.get("ok") and curr.get("target") == target and curr.get("dataset_fingerprint") == st.session_state.get("uploaded_fingerprint"):
+    fingerprint = st.session_state.get("uploaded_fingerprint")
+    if not force_retrain and curr and curr.get("ok") and curr.get("target") == target and curr.get("dataset_fingerprint") == fingerprint:
         return curr
     comp = st.session_state.get("comparison_result")
-    if comp and comp.get("ok") and comp.get("target") == target and comp.get("dataset_fingerprint") == st.session_state.get("uploaded_fingerprint") and comp.get("hybrid") and comp["hybrid"].get("ok"):
+    if not force_retrain and comp and comp.get("ok") and comp.get("target") == target and comp.get("dataset_fingerprint") == fingerprint and comp.get("hybrid") and comp["hybrid"].get("ok"):
         st.session_state.hybrid_model = comp["hybrid"]
         return comp["hybrid"]
     with st.spinner(f"Training hybrid ensemble model for target '{target}'..."):
         try:
             res = build_hybrid_model(df, target=target)
-            if res.get("ok"):
-                res["dataset_fingerprint"] = st.session_state.get("uploaded_fingerprint")
-            st.session_state.hybrid_model = res
-            return res
         except Exception:
             logger.exception("Hybrid model training failed")
-            err = {"ok": False, "error": "Hybrid model could not run. Review application logs for details."}
-            st.session_state.hybrid_model = err
-            return err
+            res = {"ok": False, "error": "Hybrid model could not run. Review application logs for details."}
+        res["dataset_fingerprint"] = fingerprint
+        st.session_state.hybrid_model = res
+        if comp and comp.get("target") == target and comp.get("dataset_fingerprint") == fingerprint:
+            comp["hybrid"] = res
+            st.session_state.comparison_result = comp
+        return res
 
 # ─────────────────── DAV Compliance Renderers ─────────────────
 
@@ -790,20 +792,16 @@ def render_dataset_understanding(df):
                     hovertemplate=f"{target_c}: %{{x}}<br>Rows: %{{y}}<extra></extra>",
                 )
                 st.plotly_chart(chart_style(fig, 330), use_container_width=True)
-        st.dataframe(pd.DataFrame({
-            "Metric": [
-                "Duplicate rows detected before cleaning",
-                "Duplicate rows remaining after cleaning",
-                "Target column",
-                "Task-relevant target balance",
-            ],
-            "Value": [
+        st.dataframe(
+            build_dataset_understanding_metrics(
                 raw_duplicates,
                 cleaned_duplicates,
                 summary["target_column"],
                 summary["class_imbalance"],
-            ],
-        }), use_container_width=True, hide_index=True)
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
     with tab2:
         st.dataframe(pd.DataFrame([{"Column":col,"Data Type":summary["data_types"].get(col),"Missing":summary["missing_values"].get(col,0),"Unique Values":summary["unique_values"].get(col,0)} for col in df.columns]), use_container_width=True, hide_index=True)
 
@@ -961,11 +959,12 @@ def render_hybrid_model(df):
     target = st.session_state.dataset_summary.get("target_column") or detect_target(df)
     if not target: st.warning("The hybrid model requires a target column."); return
     col_hdr, col_btn = st.columns([3, 1])
+    hybrid = None
     with col_btn:
         if st.button("🔄 Retrain Hybrid", key="retrain_hybrid_btn", help="Re-train the hybrid ensemble model"):
-            st.session_state.hybrid_model = {}
-            st.rerun()
-    hybrid = get_or_compute_hybrid(df, target=target)
+            hybrid = get_or_compute_hybrid(df, target=target, force_retrain=True)
+    if hybrid is None:
+        hybrid = get_or_compute_hybrid(df, target=target)
     if not hybrid.get("ok"): st.error(hybrid.get("error", "Hybrid model training failed.")); return
     metrics = hybrid["metrics"]; st.dataframe(pd.DataFrame([metrics]), use_container_width=True, hide_index=True)
     st.write(f"Model name: **{hybrid['model_name']}**")

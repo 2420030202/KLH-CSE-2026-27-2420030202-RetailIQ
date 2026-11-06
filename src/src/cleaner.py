@@ -44,11 +44,11 @@ def clean_dataset(df, plan):
         if (before.fillna("__NA__") != cleaned[c].fillna("__NA__")).any():
             log.append({"Action":"Trimmed text","Column":c,"Reason":"Removed leading/trailing whitespace"})
 
-    for c in cleaned.select_dtypes(include=["object"]).columns:
+    for c in cleaned.select_dtypes(include=["object", "string"]).columns:
         sample = cleaned[c].dropna().astype(str).head(100)
         if len(sample) >= 5:
-            parsed = pd.to_datetime(sample, errors="coerce")
+            parsed = pd.to_datetime(sample, format="mixed", errors="coerce")
             if parsed.notna().mean() >= 0.90:
-                cleaned[c] = pd.to_datetime(cleaned[c], errors="coerce")
+                cleaned[c] = pd.to_datetime(cleaned[c], format="mixed", errors="coerce")
                 log.append({"Action":"Converted","Column":c,"Reason":"Detected date-like values"})
     return cleaned, log

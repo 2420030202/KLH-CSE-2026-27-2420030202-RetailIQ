@@ -10,7 +10,7 @@ def _date_like_columns(df):
         elif pd.api.types.is_object_dtype(s) or pd.api.types.is_string_dtype(s):
             sample = s.dropna().astype(str).head(100)
             if len(sample) >= 5:
-                parsed = pd.to_datetime(sample, errors="coerce")
+                parsed = pd.to_datetime(sample, format="mixed", errors="coerce")
                 if parsed.notna().mean() >= 0.80:
                     result.append(col)
     return result
