@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import warnings
 
 import pandas as pd
@@ -125,7 +127,7 @@ def test_retrain_hybrid_button_forces_fresh_training(monkeypatch):
 
     monkeypatch.setattr(dav_support, "build_hybrid_model", fake_build_hybrid_model)
 
-    app = AppTest.from_file("app.py")
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
     app.session_state["raw_df"] = df
     app.session_state["cleaned_df"] = df
     app.session_state["profile"] = profile
