@@ -115,17 +115,22 @@ The project is organized around the Streamlit entry point and supporting Python 
 RetailIQ/
 ├── app.py
 ├── requirements.txt
+├── Dockerfile
 ├── RUN_RETAILIQ.bat
 ├── src/
-│   └── ... application and analytical modules
+│   └── ... analytical Python modules
 ├── data/
 │   └── ... permitted datasets and dataset instructions
+├── research_datasets/
+│   └── ... benchmark datasets
 ├── docs/
 │   └── ... project and technical documentation
 ├── reports/
 │   └── ... review, audit, and project reports
 ├── results/
 │   └── ... generated analytical outputs and artifacts
+├── scripts/
+│   └── ... project utility scripts
 ├── tests/
 │   └── ... automated tests
 └── README.md
@@ -198,6 +203,23 @@ streamlit run app.py
 If the project-provided Windows launcher `RUN_RETAILIQ.bat` is available and configured, it can also be used to start the application.
 
 Streamlit will print a local URL in the terminal. Open that URL in a web browser.
+
+### Run tests
+
+From the repository root:
+
+```bash
+python -m pytest -q
+```
+
+### Docker
+
+Build and run from the repository root:
+
+```bash
+docker build -t retailiq .
+docker run --rm -p 8501:8501 retailiq
+```
 
 ---
 

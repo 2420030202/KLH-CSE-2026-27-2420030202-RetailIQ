@@ -1,6 +1,6 @@
-# RetailIQ Final Frontend
+# RetailIQ Streamlit Frontend
 
-This package is a frontend replacement for `app.py` in the existing RetailIQ V1.0 repository.
+The Streamlit entry point is `app.py` at the repository root. The analytics and ML modules are in the root-level `src/` package.
 
 It preserves the existing backend modules under `src/` and provides:
 - premium SaaS dark/light UI
@@ -17,7 +17,7 @@ It preserves the existing backend modules under `src/` and provides:
 - CSV/XLSX/XLS upload
 - session-state persistence
 
-Replace the repository's `app.py` with this version and copy `assets/retailiq_logo.svg` and `.streamlit/config.toml`.
+The application and logo are already in their project locations; no file copying is required. A `.streamlit/config.toml` is not present or required for startup.
 
-Run:
-`streamlit run app.py`
+From the repository root, run:
+`python -m streamlit run app.py`

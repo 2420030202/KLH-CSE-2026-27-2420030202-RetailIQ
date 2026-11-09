@@ -38,6 +38,7 @@ from src.advanced_ml import (
 )
 
 logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 # ============================================================
 # RetailIQ — Premium Adaptive Analytics Frontend
@@ -1645,7 +1646,7 @@ elif page == "Research Evaluation":
     st.markdown("<div class='page-kicker'>Advanced</div>",unsafe_allow_html=True)
     st.markdown("<div class='page-title'>🔬 Research Evaluation</div>",unsafe_allow_html=True)
     st.markdown("<div class='page-subtitle'>Reproducible evaluation artifacts are available here without running expensive benchmarks automatically.</div>",unsafe_allow_html=True)
-    out=Path("results/research_suite")
+    out=PROJECT_ROOT / "results" / "research_suite"
     col_run,col_status=st.columns([1,2])
     with col_run: run_research=st.button("🚀  Run Research Evaluation",type="primary")
     with col_status:
@@ -1655,7 +1656,12 @@ elif page == "Research Evaluation":
         try:
             from src.research_suite import run_suite
             with st.spinner("Running research suite — this may take several minutes..."):
-                result=run_suite(root="research_datasets",results_dir="results/research_suite",repeats=5,folds=5)
+                result=run_suite(
+                    root=PROJECT_ROOT / "research_datasets",
+                    results_dir=out,
+                    repeats=5,
+                    folds=5,
+                )
             st.session_state.research_result=result; st.success("Research evaluation completed successfully.")
         except Exception as exc: st.error(f"Research evaluation could not be completed: {exc}")
     if hasattr(st.session_state,"research_result"):
