@@ -264,12 +264,21 @@ RetailIQ/
 │
 ├── app.py
 │
+├── assets/
+│   └── retailiq_logo.svg
 ├── src/
+│   ├── advanced_ml.py
 │   ├── analyzer.py
 │   ├── cleaner.py
-│   └── recommender.py
+│   ├── dav_support.py
+│   ├── ml_analyzer.py
+│   ├── recommender.py
+│   ├── research_suite.py
+│   └── visualizer.py
 │
 ├── data/
+│
+├── research_datasets/
 │
 ├── docs/
 │
@@ -277,7 +286,13 @@ RetailIQ/
 │
 ├── reports/
 │
+├── scripts/
+│
+├── tests/
+│
+├── Dockerfile
 ├── requirements.txt
+├── RUN_RETAILIQ.bat
 ├── .gitignore
 └── README.md
 ```

@@ -1,7 +1,7 @@
 # RetailIQ Backend and DAV Audit
 
-**Review scope:** `RetailIQ_v08_work` only  
-**Review type:** source, test, dataset-manifest, and interactive Streamlit audit  
+**Review scope:** RetailIQ application code and assets before Stage 3 repository restructuring
+**Review type:** source, test, dataset-manifest, and interactive Streamlit audit
 **Conclusion:** The project implements substantial DAV-aligned workflow features, but the available evidence does not establish formal compliance with an external course or institutional rubric. Several execution/data-integrity issues found during the audit were fixed and verified.
 
 ## Executive summary
@@ -88,4 +88,4 @@ Warnings were non-failing: pandas date-format inference and SHAP colormap deprec
 
 ## Scope and limitations
 
-This audit covers the nested `RetailIQ_v08_work` project, not the parent repository’s pre-existing deletions. It is not a formal external DAV certification, a production deployment test, or a full security assessment. Existing research artifacts were read only and left unchanged.
+This audit records the application and assets as reviewed before Stage 3 repository restructuring. It is not a formal external DAV certification, a production deployment test, or a full security assessment. Existing research artifacts were read only and left unchanged.

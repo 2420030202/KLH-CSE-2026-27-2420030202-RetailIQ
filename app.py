@@ -14,6 +14,7 @@ from src.cleaner import build_cleaning_plan, clean_dataset
 from src.dav_support import (
     build_customer_recommendation,
     build_data_story,
+    build_dataset_understanding_metrics,
     build_hybrid_model,
     build_target_distribution_data,
     build_preprocessing_decisions,
@@ -37,6 +38,7 @@ from src.advanced_ml import (
 )
 
 logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 # ============================================================
 # RetailIQ — Premium Adaptive Analytics Frontend
@@ -652,27 +654,59 @@ def update_dataset_context(df):
     if df is None or df.empty: return
     st.session_state.dataset_summary = summarize_dataset(df)
     st.session_state.project_definition = build_project_definition()
-    target = st.session_state.dataset_summary.get("target_column")
-    if target:
+    # Safe lazy-loading: Clear previous model caches so models evaluate on-demand
+    st.session_state.comparison_result = {}
+    st.session_state.hybrid_model = {}
+
+def get_or_compute_comparison(df, target=None):
+    target = target or st.session_state.dataset_summary.get("target_column") or detect_target(df)
+    if not target:
+        return {"ok": False, "error": "No target column was detected for supervised analysis."}
+    curr = st.session_state.get("comparison_result")
+    if curr and curr.get("ok") and curr.get("target") == target and curr.get("dataset_fingerprint") == st.session_state.get("uploaded_fingerprint"):
+        return curr
+    with st.spinner(f"Evaluating candidate models for target '{target}'..."):
         try:
-            st.session_state.comparison_result = compare_models(df, target=target)
+            res = compare_models(df, target=target)
+            if res.get("ok"):
+                res["dataset_fingerprint"] = st.session_state.get("uploaded_fingerprint")
+                st.session_state.comparison_result = res
+                if res.get("hybrid") and res["hybrid"].get("ok"):
+                    res["hybrid"]["dataset_fingerprint"] = st.session_state.get("uploaded_fingerprint")
+                    st.session_state.hybrid_model = res["hybrid"]
+            else:
+                st.session_state.comparison_result = res
+            return res
         except Exception:
-            logger.exception("Model comparison failed during dataset load")
-            st.session_state.comparison_result = {
-                "ok": False,
-                "error": "Model comparison could not run. Review application logs for details.",
-            }
+            logger.exception("Model comparison failed")
+            err = {"ok": False, "error": "Model comparison could not run. Review application logs for details."}
+            st.session_state.comparison_result = err
+            return err
+
+def get_or_compute_hybrid(df, target=None, force_retrain=False):
+    target = target or st.session_state.dataset_summary.get("target_column") or detect_target(df)
+    if not target:
+        return {"ok": False, "error": "The hybrid model requires a target column."}
+    curr = st.session_state.get("hybrid_model")
+    fingerprint = st.session_state.get("uploaded_fingerprint")
+    if not force_retrain and curr and curr.get("ok") and curr.get("target") == target and curr.get("dataset_fingerprint") == fingerprint:
+        return curr
+    comp = st.session_state.get("comparison_result")
+    if not force_retrain and comp and comp.get("ok") and comp.get("target") == target and comp.get("dataset_fingerprint") == fingerprint and comp.get("hybrid") and comp["hybrid"].get("ok"):
+        st.session_state.hybrid_model = comp["hybrid"]
+        return comp["hybrid"]
+    with st.spinner(f"Training hybrid ensemble model for target '{target}'..."):
         try:
-            st.session_state.hybrid_model = build_hybrid_model(df, target=target)
+            res = build_hybrid_model(df, target=target)
         except Exception:
-            logger.exception("Hybrid model failed during dataset load")
-            st.session_state.hybrid_model = {
-                "ok": False,
-                "error": "Hybrid model could not run. Review application logs for details.",
-            }
-    else:
-        st.session_state.comparison_result = {"ok": False, "error": "No target column was detected for supervised analysis."}
-        st.session_state.hybrid_model = {"ok": False, "error": "No target column was detected for hybrid modeling."}
+            logger.exception("Hybrid model training failed")
+            res = {"ok": False, "error": "Hybrid model could not run. Review application logs for details."}
+        res["dataset_fingerprint"] = fingerprint
+        st.session_state.hybrid_model = res
+        if comp and comp.get("target") == target and comp.get("dataset_fingerprint") == fingerprint:
+            comp["hybrid"] = res
+            st.session_state.comparison_result = comp
+        return res
 
 # ─────────────────── DAV Compliance Renderers ─────────────────
 
@@ -759,20 +793,16 @@ def render_dataset_understanding(df):
                     hovertemplate=f"{target_c}: %{{x}}<br>Rows: %{{y}}<extra></extra>",
                 )
                 st.plotly_chart(chart_style(fig, 330), use_container_width=True)
-        st.dataframe(pd.DataFrame({
-            "Metric": [
-                "Duplicate rows detected before cleaning",
-                "Duplicate rows remaining after cleaning",
-                "Target column",
-                "Task-relevant target balance",
-            ],
-            "Value": [
+        st.dataframe(
+            build_dataset_understanding_metrics(
                 raw_duplicates,
                 cleaned_duplicates,
                 summary["target_column"],
                 summary["class_imbalance"],
-            ],
-        }), use_container_width=True, hide_index=True)
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
     with tab2:
         st.dataframe(pd.DataFrame([{"Column":col,"Data Type":summary["data_types"].get(col),"Missing":summary["missing_values"].get(col,0),"Unique Values":summary["unique_values"].get(col,0)} for col in df.columns]), use_container_width=True, hide_index=True)
 
@@ -831,7 +861,7 @@ def render_eda_statistics(df):
                 fig.update_traces(marker_color=C["primary"]); st.plotly_chart(chart_style(fig, 300), use_container_width=True)
             else: st.warning(result.get("message"))
     elif stat_test == "Chi-square":
-        cat_candidates = [col for col in df.columns if str(df[col].dtype).startswith("object") or pd.api.types.is_string_dtype(df[col]) or pd.api.types.is_categorical_dtype(df[col]) or pd.api.types.is_bool_dtype(df[col])]
+        cat_candidates = [col for col in df.columns if str(df[col].dtype).startswith("object") or pd.api.types.is_string_dtype(df[col]) or isinstance(df[col].dtype, pd.CategoricalDtype) or pd.api.types.is_bool_dtype(df[col])]
         if len(cat_candidates) < 2: st.info("Two suitable categorical variables are required for a chi-square test of independence.")
         else:
             cat_a = st.selectbox("Categorical variable A", cat_candidates, index=0)
@@ -846,7 +876,7 @@ def render_eda_statistics(df):
             else: st.warning(result.get("message"))
     else:
         anova_cands = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique(dropna=True) > 1]
-        group_cands = [col for col in df.columns if df[col].nunique(dropna=True) >= 3 and (str(df[col].dtype).startswith("object") or pd.api.types.is_string_dtype(df[col]) or pd.api.types.is_categorical_dtype(df[col]) or pd.api.types.is_bool_dtype(df[col]))]
+        group_cands = [col for col in df.columns if df[col].nunique(dropna=True) >= 3 and (str(df[col].dtype).startswith("object") or pd.api.types.is_string_dtype(df[col]) or isinstance(df[col].dtype, pd.CategoricalDtype) or pd.api.types.is_bool_dtype(df[col]))]
         if not anova_cands or not group_cands: st.info("ANOVA requires a numeric variable and a grouping variable with at least three groups.")
         else:
             num_col = st.selectbox("Numeric variable", anova_cands, index=0)
@@ -894,7 +924,13 @@ def render_model_comparison(df):
     st.markdown("<div class='page-title'>Baseline vs Existing vs Proposed Hybrid</div>", unsafe_allow_html=True)
     target = st.session_state.dataset_summary.get("target_column") or detect_target(df)
     if not target: st.warning("A target must be detected before the comparison view is meaningful."); return
-    comparison = compare_models(df, target=target)
+    col_hdr, col_btn = st.columns([3, 1])
+    with col_btn:
+        if st.button("🔄 Retrain Models", key="retrain_models_btn", help="Re-evaluate candidate models for this dataset"):
+            st.session_state.comparison_result = {}
+            st.session_state.hybrid_model = {}
+            st.rerun()
+    comparison = get_or_compute_comparison(df, target=target)
     if not comparison.get("ok"): st.error(comparison.get("error", "Model comparison failed.")); return
     models = comparison["models"].copy(); st.dataframe(models, use_container_width=True, hide_index=True)
     task = comparison.get("task")
@@ -923,7 +959,13 @@ def render_hybrid_model(df):
     st.markdown("<div class='page-title'>RetailIQ Proposed Hybrid Ensemble</div>", unsafe_allow_html=True)
     target = st.session_state.dataset_summary.get("target_column") or detect_target(df)
     if not target: st.warning("The hybrid model requires a target column."); return
-    hybrid = build_hybrid_model(df, target=target)
+    col_hdr, col_btn = st.columns([3, 1])
+    hybrid = None
+    with col_btn:
+        if st.button("🔄 Retrain Hybrid", key="retrain_hybrid_btn", help="Re-train the hybrid ensemble model"):
+            hybrid = get_or_compute_hybrid(df, target=target, force_retrain=True)
+    if hybrid is None:
+        hybrid = get_or_compute_hybrid(df, target=target)
     if not hybrid.get("ok"): st.error(hybrid.get("error", "Hybrid model training failed.")); return
     metrics = hybrid["metrics"]; st.dataframe(pd.DataFrame([metrics]), use_container_width=True, hide_index=True)
     st.write(f"Model name: **{hybrid['model_name']}**")
@@ -1176,9 +1218,18 @@ page = st.session_state.selected_page
 
 if page == "Executive Overview":
     render_project_definition(); render_dataset_understanding(df)
-    if st.session_state.get("comparison_result") and st.session_state["comparison_result"].get("ok"):
+    comp = st.session_state.get("comparison_result")
+    if comp and comp.get("ok"):
         st.markdown("### Model comparison snapshot")
-        st.dataframe(st.session_state["comparison_result"]["models"], use_container_width=True, hide_index=True)
+        st.dataframe(comp["models"], use_container_width=True, hide_index=True)
+    else:
+        target = st.session_state.dataset_summary.get("target_column") or detect_target(df)
+        if target:
+            st.markdown("### Model comparison snapshot")
+            st.caption("Model benchmarks evaluate on-demand for this session.")
+            if st.button("🚀 Run Model Comparison Benchmark", key="exec_run_comp"):
+                get_or_compute_comparison(df, target=target)
+                st.rerun()
 elif page == "Dataset Understanding": render_dataset_understanding(df)
 elif page == "Data Cleaning": render_data_cleaning(df)
 elif page == "EDA & Statistics": render_eda_statistics(df)
@@ -1595,7 +1646,7 @@ elif page == "Research Evaluation":
     st.markdown("<div class='page-kicker'>Advanced</div>",unsafe_allow_html=True)
     st.markdown("<div class='page-title'>🔬 Research Evaluation</div>",unsafe_allow_html=True)
     st.markdown("<div class='page-subtitle'>Reproducible evaluation artifacts are available here without running expensive benchmarks automatically.</div>",unsafe_allow_html=True)
-    out=Path("results/research_suite")
+    out=PROJECT_ROOT / "results" / "research_suite"
     col_run,col_status=st.columns([1,2])
     with col_run: run_research=st.button("🚀  Run Research Evaluation",type="primary")
     with col_status:
@@ -1605,7 +1656,12 @@ elif page == "Research Evaluation":
         try:
             from src.research_suite import run_suite
             with st.spinner("Running research suite — this may take several minutes..."):
-                result=run_suite(root="research_datasets",results_dir="results/research_suite",repeats=5,folds=5)
+                result=run_suite(
+                    root=PROJECT_ROOT / "research_datasets",
+                    results_dir=out,
+                    repeats=5,
+                    folds=5,
+                )
             st.session_state.research_result=result; st.success("Research evaluation completed successfully.")
         except Exception as exc: st.error(f"Research evaluation could not be completed: {exc}")
     if hasattr(st.session_state,"research_result"):

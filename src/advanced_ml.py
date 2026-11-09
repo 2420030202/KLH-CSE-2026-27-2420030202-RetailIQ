@@ -195,10 +195,17 @@ def run_forecast(df: pd.DataFrame, date_col: str | None = None, target: str | No
     future_dates = pd.date_range(agg["date"].iloc[-1], periods=horizon + 1, freq=freq)[1:]
     future_values = []
     for _ in range(horizon):
-        lags = {1: history[-1], 2: history[-2] if len(history) >= 2 else history[-1], 3: history[-3] if len(history) >= 3 else history[-1], 7: history[-7] if len(history) >= 7 else history[-1]}
-        row = [[lags[1], lags[2], lags[3], lags[7], float(np.mean(history[-3:]))]]
-        val = float(final_model.predict(pd.DataFrame(row, columns=features))[0])
-        history.append(val); future_values.append(val)
+        row_dict = {}
+        for lag in (1, 2, 3, 7):
+            col_name = f"lag_{lag}"
+            if col_name in features:
+                row_dict[col_name] = history[-lag] if len(history) >= lag else history[-1]
+        if "rolling_mean_3" in features:
+            row_dict["rolling_mean_3"] = float(np.mean(history[-3:])) if len(history) >= 3 else float(np.mean(history))
+        row_df = pd.DataFrame([row_dict])[features]
+        val = float(final_model.predict(row_df)[0])
+        history.append(val)
+        future_values.append(val)
     forecast = pd.DataFrame({"date": future_dates, "forecast": future_values})
     return {"ok": True, "date_column": date_col, "target": target, "frequency": freq, "aggregated": agg, "evaluation": score_df, "best_model": best_name, "forecast": forecast}
 

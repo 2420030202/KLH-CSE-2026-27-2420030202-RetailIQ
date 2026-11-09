@@ -7,15 +7,13 @@ This package is a **complete RetailIQ project**, not a frontend-only folder.
 - `app.py` — premium Streamlit frontend
 - `src/` — existing RetailIQ analytics/ML engines
 - `assets/retailiq_logo.svg` — new branding
-- `.streamlit/config.toml` — Streamlit configuration
 - `requirements.txt` — dependencies
+- `Dockerfile` — container build
 - `RUN_RETAILIQ.bat` — Windows launcher
 
 ## Run in VS Code
 
-Open this exact folder as the VS Code workspace:
-
-`RetailIQ_v08_work`
+Open the repository root as the VS Code workspace. It contains both `app.py` and the backend package in `src/`.
 
 Then run:
 
@@ -24,8 +22,10 @@ python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
+On Windows, `RUN_RETAILIQ.bat` can also be started from the repository root.
+
 ## Important
 
 Do **not** copy only `app.py` into a separate empty folder. The frontend imports the existing backend through `src.*`.
 
-The application must be launched from the project root containing both `app.py` and `src/`.
+Launch the application from the repository root so its data and results paths resolve consistently.
